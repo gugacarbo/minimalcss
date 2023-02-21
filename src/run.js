@@ -518,10 +518,10 @@ const minimalcss = async (options) => {
   // But first check that every spotted stylesheet (by <link> tags)
   // got downloaded.
 
-  console.log("stylesheetAsts", stylesheetAsts);
-  console.log("skippedUrls", skippedUrls);
-  console.log("redirectResponses", redirectResponses);
-  console.log("allHrefs", allHrefs);
+  // console.log("stylesheetAsts", stylesheetAsts);
+  // console.log("skippedUrls", skippedUrls);
+  // console.log("redirectResponses", redirectResponses);
+  // console.log("allHrefs", allHrefs);
 
   const missingASTs = [...allHrefs].filter((url) => {
     return !(
