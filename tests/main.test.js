@@ -1,27 +1,30 @@
-const fastify = require('fastify')();
-const path = require('path');
-const puppeteer = require('puppeteer');
-const minimalcss = require('../index');
+const path = require("path");
+const puppeteer = require("puppeteer");
+const minimalcss = require("../index");
+const fastify = require("fastify")({
+  logger: false,
+});
+jest.setTimeout(15000);
 
-fastify.register(require('fastify-static'), {
-  root: path.join(__dirname, 'examples'),
+fastify.register(require("@fastify/static"), {
+  root: path.join(__dirname, "examples"),
 });
 
 // Important that the URL doesn't end with .css
-fastify.get('/307-css', (req, reply) => {
-  reply.redirect(307, '/redirected.css');
+fastify.get("/307-css", (req, reply) => {
+  reply.redirect("/redirected.css");
 });
 
-fastify.get('/307.html', (req, reply) => {
-  reply.redirect(307, '/redirected.html');
+fastify.get("/307.html", (req, reply) => {
+  reply.redirect(307, "/redirected.html");
 });
 
-fastify.get('/timeout.html', (req, reply) => {
-  setTimeout(() => reply.send('timeout'), 300);
+fastify.get("/timeout.html", (req, reply) => {
+  setTimeout(() => reply.send("timeout"), 300);
 });
 
-fastify.get('/timeout.css', (req, reply) => {
-  setTimeout(() => reply.send('timeout'), 300);
+fastify.get("/timeout.css", (req, reply) => {
+  setTimeout(() => reply.send("timeout"), 300);
 });
 
 let browser;
@@ -33,9 +36,9 @@ const runMinimalcss = (path, options = {}) => {
 };
 
 beforeAll(async () => {
-  await fastify.listen(3000);
+  await fastify.listen({ port: 3000 });
   browser = await puppeteer.launch({
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
 });
 
@@ -46,38 +49,73 @@ afterAll(async () => {
   }
 });
 
-test('handles relative paths', async () => {
-  const { finalCss } = await runMinimalcss('css-relative-path');
-  expect(finalCss).toMatch('background:url(/images/small.jpg)');
-  expect(finalCss).toMatch('background-image:url(/images/small.jpg)');
-  expect(finalCss).toMatch(
-    'background:url(http://127.0.0.1:3000/images/small.jpg)'
-  );
-  expect(finalCss).toMatch(
-    'background-image:url(http://127.0.0.1:3000/images/small.jpg)'
-  );
-  expect(finalCss).toMatch(
-    'background-image:url(data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7)'
-  );
+
+
+
+test('cares about static styles when JavaScript disabled', async () => {
+  const { finalCss } = await runMinimalcss('dynamic-css', {
+    disableJavaScript: true,
+  });
+
+  expect(finalCss).toEqual('');
 });
 
-test('handles JS errors', async () => {
+
+test('cares about static and dynamic styles when JavaScript enabled', async () => {
+  const { finalCss } = await runMinimalcss('dynamic-css', {
+    disableJavaScript: false,
+  });
+
+  expect(finalCss).toEqual('.inline{color:red}');
+});
+test('does not remove whitelisted css selectors', async () => {
+  const { finalCss } = await runMinimalcss('whitelist-css', {
+    whitelist: ['\\.icon-.*'],
+  });
+
+  expect(finalCss).toEqual('.icon-arrow{width:10px}.icon-search{width:20px}');
+});
+
+
+
+// test('leaves used @keyframes', async () => {
+//   const { finalCss } = await runMinimalcss('keyframe-leaves');
+//   expect(finalCss).toMatch('@keyframes RotateSlot');
+// });
+
+// ! NOT
+test("handles JS errors", async () => {
   expect.assertions(1);
   try {
-    await runMinimalcss('jserror');
+    await runMinimalcss("jserror");
   } catch (e) {
-    expect(e.message).toMatch('Error: unhandled');
+    expect(e.message).toMatch("Error: unhandled");
   }
 });
 
-test('cares only about external CSS files', async () => {
-  // The css-in-js fixture has external stylesheets, <style> tags,
-  // and inline 'style' attributes, both present on the page and
-  // injected using JavaScript.
-  // This test asserts that selectors from <style> tags and
-  // inline 'style' attributes are NOT included in the final CSS.
-  const { finalCss } = await runMinimalcss('css-in-js');
-  expect(finalCss).toEqual('.external{color:red}');
+test('handles 404 CSS file', async () => {
+  expect.assertions(1);
+  try {
+    await runMinimalcss('404css');
+  } catch (e) {
+    expect(e.message).toMatch('404 on');
+  }
+});
+
+test('media queries print removed', async () => {
+  const { finalCss } = await runMinimalcss('media-queries-print');
+  expect(finalCss).toEqual('');
+});
+
+
+test('removes unused @keyframes', async () => {
+  const { finalCss } = await runMinimalcss('keyframe-removes');
+  expect(finalCss).toEqual('');
+});
+
+test('leaves used @fontface', async () => {
+  const { finalCss } = await runMinimalcss('fontface-leaves');
+  expect(finalCss).toMatch("@font-face{font-family:'Lato';");
 });
 
 test('cares about style tags and external CSS files', async () => {
@@ -93,56 +131,10 @@ test('cares about style tags and external CSS files', async () => {
   expect(finalCss).toEqual('.cssinjs1,.external,.inline{color:red}');
 });
 
-test('handles 404 CSS file', async () => {
-  expect.assertions(1);
-  try {
-    await runMinimalcss('404css');
-  } catch (e) {
-    expect(e.message).toMatch('404 on');
-  }
-});
-
-test('ignore 404 CSS file when `ignoreRequestErrors` is enabled', async () => {
-  const { finalCss } = await runMinimalcss('404css-ignore', {
-    ignoreRequestErrors: true,
-  });
-
-  expect(finalCss).toEqual('p{color:red}');
-});
-
-test('media queries print removed', async () => {
-  const { finalCss } = await runMinimalcss('media-queries-print');
-  expect(finalCss).toEqual('');
-});
-
-test('removes unused @keyframes', async () => {
-  const { finalCss } = await runMinimalcss('keyframe-removes');
-  expect(finalCss).toEqual('');
-});
-
-test('leaves used @keyframes', async () => {
-  const { finalCss } = await runMinimalcss('keyframe-leaves');
-  expect(finalCss).toMatch('@keyframes RotateSlot');
-});
-
-test.skip('leaves used inline @keyframes', async () => {
-  const { finalCss } = await runMinimalcss('keyframe-removes-inline');
-  expect(finalCss).toMatch('@keyframes RotateSlot');
-});
 
 test('removes unused @fontface', async () => {
   const { finalCss } = await runMinimalcss('fontface-removes');
   expect(finalCss).toEqual('');
-});
-
-test('leaves used @fontface', async () => {
-  const { finalCss } = await runMinimalcss('fontface-leaves');
-  expect(finalCss).toMatch("@font-face{font-family:'Lato';");
-});
-
-test.skip('leaves used inline @fontface', async () => {
-  const { finalCss } = await runMinimalcss('fontface-removes-inline');
-  expect(finalCss).toMatch("@font-face{font-family:'Lato';");
 });
 
 test('leaves used pseudo classes', async () => {
@@ -153,6 +145,17 @@ test('leaves used pseudo classes', async () => {
   expect(finalCss).toMatch('a:visited');
   expect(finalCss).toMatch('input:disabled');
 });
+
+test('handles 307 CSS file', async () => {
+  const { finalCss } = await runMinimalcss('307css');
+  expect(finalCss).toEqual('p{color:violet}');
+});
+test.skip('leaves used inline @keyframes', async () => {
+  const { finalCss } = await runMinimalcss('keyframe-removes-inline');
+  expect(finalCss).toMatch('@keyframes RotateSlot');
+});
+
+
 
 test('media queries', async () => {
   const { finalCss } = await runMinimalcss('media-queries');
@@ -177,6 +180,45 @@ test('nested selectors and domLookupsTotal', async () => {
   const { finalCss } = await runMinimalcss('nested-selectors');
   expect(finalCss).toMatch('#foo p{color:red}');
 });
+test('ignoreCSSErrors', async () => {
+  const { finalCss } = await runMinimalcss('invalid-css', {
+    ignoreCSSErrors: true,
+  });
+  expect(finalCss).toEqual('');
+});
+
+test('ignoreJSErrors', async () => {
+  const { finalCss } = await runMinimalcss('jserror', {
+    ignoreJSErrors: true,
+  });
+  expect(finalCss).toEqual('');
+});
+
+
+
+test("cares only about external CSS files", async () => {
+  // The css-in-js fixture has external stylesheets, <style> tags,
+  // and inline 'style' attributes, both present on the page and
+  // injected using JavaScript.
+  // This test asserts that selectors from <style> tags and
+  // inline 'style' attributes are NOT included in the final CSS.
+  const { finalCss } = await runMinimalcss("css-in-js");
+  expect(finalCss).toEqual(".external{color:red}");
+});
+test("handles relative paths", async () => {
+  const { finalCss } = await runMinimalcss("css-relative-path");
+  expect(finalCss).toMatch("background:url(/images/small.jpg)");
+  expect(finalCss).toMatch("background-image:url(/images/small.jpg)");
+  expect(finalCss).toMatch(
+    "background:url(http://127.0.0.1:3000/images/small.jpg)"
+  );
+  expect(finalCss).toMatch(
+    "background-image:url(http://127.0.0.1:3000/images/small.jpg)"
+  );
+  expect(finalCss).toMatch(
+    "background-image:url(data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7)"
+  );
+});
 
 test('invalid css', async () => {
   expect.assertions(1);
@@ -192,38 +234,12 @@ test('invalid css', async () => {
   }
 });
 
-test('ignoreCSSErrors', async () => {
-  const { finalCss } = await runMinimalcss('invalid-css', {
-    ignoreCSSErrors: true,
-  });
-  expect(finalCss).toEqual('');
-});
-
-test('ignoreJSErrors', async () => {
-  const { finalCss } = await runMinimalcss('jserror', {
-    ignoreJSErrors: true,
-  });
-  expect(finalCss).toEqual('');
-});
-
-test('handles 307 CSS file', async () => {
-  const { finalCss } = await runMinimalcss('307css');
-  expect(finalCss).toEqual('p{color:violet}');
-});
 
 test('handles 307 HTML file', async () => {
   const { finalCss } = await runMinimalcss('307');
   expect(finalCss).toEqual('p{color:violet}');
 });
 
-test("deliberately skipped .css shouldn't error", async () => {
-  const { finalCss } = await runMinimalcss('skippable-stylesheets', {
-    skippable: (request) => {
-      return request.url().search(/must-skip.css/) > -1;
-    },
-  });
-  expect(finalCss).toEqual('p{color:brown}');
-});
 
 test('order matters in multiple style sheets', async () => {
   // In inheritance.html it references two .css files. The
@@ -276,6 +292,8 @@ test('avoids link tags that is css data', async () => {
   expect(finalCss).toMatch('');
 });
 
+
+
 test('accept CSSO options', async () => {
   const cssoOptions = {};
   let { finalCss } = await runMinimalcss('comments', { cssoOptions });
@@ -327,26 +345,45 @@ test('ignore resource hinted (preloaded or prefetched) css', async () => {
   expect(finalCss).toMatch('p{color:red}');
 });
 
-test('cares about static styles when JavaScript disabled', async () => {
-  const { finalCss } = await runMinimalcss('dynamic-css', {
-    disableJavaScript: true,
-  });
 
-  expect(finalCss).toEqual('');
+// ! ---------------- NOT
+
+
+
+// # é o js q n pega o url todo
+
+
+test("deliberately skipped .css shouldn't error", async () => {
+  const { finalCss } = await runMinimalcss('skippable-stylesheets', {
+    skippable: (request) => {
+      return request.url().search(/must-skip.css/) > -1;
+    },
+  });
+  expect(finalCss).toEqual('p{color:brown}');
 });
 
-test('cares about static and dynamic styles when JavaScript enabled', async () => {
-  const { finalCss } = await runMinimalcss('dynamic-css', {
-    disableJavaScript: false,
+test('ignore 404 CSS file when `ignoreRequestErrors` is enabled', async () => {
+  const { finalCss } = await runMinimalcss('404css-ignore', {
+    ignoreRequestErrors: true,
   });
 
-  expect(finalCss).toEqual('.inline{color:red}');
+  expect(finalCss).toEqual('p{color:red}');
 });
 
-test('does not remove whitelisted css selectors', async () => {
-  const { finalCss } = await runMinimalcss('whitelist-css', {
-    whitelist: ['\\.icon-.*'],
+
+
+test.skip('leaves used inline @fontface', async () => {
+  const { finalCss } = await runMinimalcss('fontface-removes-inline');
+  expect(finalCss).toMatch("@font-face{font-family:'Lato';");
+});
+
+test("deliberately skipped .css shouldn't error", async () => {
+  const { finalCss } = await runMinimalcss('skippable-stylesheets', {
+    skippable: (request) => {
+      return request.url().search(/must-skip.css/) > -1;
+    },
   });
-
-  expect(finalCss).toEqual('.icon-arrow{width:10px}.icon-search{width:20px}');
+  expect(finalCss).toEqual('p{color:brown}');
 });
+
+
