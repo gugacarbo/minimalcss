@@ -378,12 +378,13 @@ const processPage = ({
         // also extract each tag's content.
         Array.from(document.querySelectorAll("link, style")).forEach((elem) => {
           if (isStylesheetLink(elem)) {
-            const href = `${defragment(elem.getAttribute("href"))}`;
-            let x = href.startsWith("./") ? href.replace("./", "") : href;
-            x = x.startsWith("http")
-              ? x
-              : `${window.location.protocol}//${window.location.host}/${x}`;
-            hrefs.push(x);
+            let href = `${defragment(elem.getAttribute("href"))}`;
+            href = href.replace(/^\.?\//, "");
+
+            href = href.startsWith("http")
+              ? href
+              : `${window.location.protocol}//${window.location.host}/${href}`;
+            hrefs.push(href);
           } else if (isCssStyleTag(elem)) {
             const href = styleTagUri();
             const text = elem.innerHTML;

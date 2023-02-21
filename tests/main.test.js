@@ -346,11 +346,7 @@ test('ignore resource hinted (preloaded or prefetched) css', async () => {
 });
 
 
-// ! ---------------- NOT
 
-
-
-// # é o js q n pega o url todo
 
 
 test("deliberately skipped .css shouldn't error", async () => {
